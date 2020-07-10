@@ -3,7 +3,6 @@ from datetime import datetime
 import threading
 import socket
 import time
-from queue import Queue
 import random
 
 # declarations 
@@ -15,14 +14,13 @@ information_panel = Text()
 information_panel.pack()
 information_panel['state'] = DISABLED
 
-NUMBER_OF_THREADS = 2
-JOB_NUMBER = [1, 2]
-queue = Queue()
 all_connections = []
 all_address = []
 all_clients = []
 
 # methods
+
+# append information to panel on the UI
 def append_info_panel(info):
     information_panel['state'] = NORMAL
     information_panel.insert(END, str(datetime.now())+ ": " + str(info)+"\n")
@@ -57,8 +55,8 @@ def bind_socket():
         print("Socket Binding error" + str(msg) + "\n" + "Retrying...")
         bind_socket()
 
-# Handling connection from multiple clients and saving to a list
-def accepting_connections():
+# Accepting connection from multiple clients
+def accept_connections():
     for c in all_connections:
         c.close()
 
@@ -72,11 +70,9 @@ def accepting_connections():
 
             all_connections.append(conn)
             all_address.append(address)
-
-            # print("Connection has been established :" + address[0] + ":"+ str(address[1]))
-            # append_info_panel("Connection has been established :" + address[0] + ":"+ str(address[1]))
             client_name = str(conn.recv(1024), "utf-8")
             
+            # client trying to connect
             append_info_panel("Client connection request " + client_name)
             if client_name in all_clients:
                 conn.send(str.encode("Username already in use.."))
@@ -88,12 +84,12 @@ def accepting_connections():
                 all_clients.append(client_name)
                 conn.send(str.encode("Connected.."))
                 append_info_panel("'{}' is now connected..".format(client_name))
-            # append_info_panel(str(all_address))
+                update_active_connections_label()
         except:
             print("Error accepting connections")
 
 
-# send pause command to client
+# send pause command to a random client
 def send_timeout():
     if len(all_connections) == 0:
         append_info_panel("No clients connected!")
@@ -101,68 +97,58 @@ def send_timeout():
     i = random.randrange(0,len(all_connections))
     conn = all_connections[i]
     client_name = all_clients[i]
-    # while True:
     try:
         cmd = str(random.randrange(3,9))
         if len(str.encode(cmd)) > 0:
-            append_info_panel("Sending Data to: "+client_name+ "  :  " + cmd)
-            conn.send(str.encode(cmd))
+            append_info_panel("Sending pause command to: "+client_name+ "  :  " + cmd)
+            conn.send(str.encode(cmd)) # sending the random number to client
             client_response = str(conn.recv(1024), "utf-8")
             append_info_panel(client_response)
             return
     except ConnectionResetError as e:
-        append_info_panel("Disconnected {}".format(client_name))
+        append_info_panel("{} disconnected".format(client_name)) # client disconnected or no longer availavle
         conn.close()
         del all_address[i]
         del all_clients[i]
         del all_connections[i]
+        update_active_connections_label()
         send_timeout()
-        # continue
     except Exception as e:
-        # send_timeout()
         return
-        # append_info_panel("Error sending random number.\n" + str(e))
-        # break
 
-# Check active client connections
-def check_connections():
-    results = ''
-
-    for i, conn in enumerate(all_connections):
-        try:
-            conn.send(str.encode(' '))
-            conn.recv(20480)
-        except:
-            del all_connections[i]
-            del all_address[i]
-            del all_clients[i]
-            continue
-
-        results = str(i) + "   " + str(all_address[i][0]) + "   " + str(all_address[i][1]) + "\n"
-
-    print("----Clients----" + "\n" + results)
-
+# Start socket server 
 def start_server():
     create_socket()
     bind_socket()
-    accepting_connections()
+    accept_connections()
 
+# Quit functionality for GUI
 def quit():
     global root
     root.destroy()
 
+# uses new thread to send a pause signal to clinet and receive response from the client
 def pause_random_every_10_seconds():
     while True:
-        append_info_panel("sending timeout..")
+        # append_info_panel("sending timeout..")
         t1 = threading.Thread(target=send_timeout)
-        # send_timeout()
         t1.daemon = True
         t1.start()
         time.sleep(10)
+
+# set active connections label on GUI
+def update_active_connections_label():
+    data = "No Clients conencted!"
+    if len(all_clients) > 0:
+        data = "Connected to: " + ",".join(all_clients)
+    global active_connections_label
+    active_connections_label.config(text=str(data))
+
+
 # code
 append_info_panel("Server is currently offline")
 
-
+# start the socket server thread
 server_thread = threading.Thread(target=start_server)
 server_thread.daemon = True
 server_thread.start()
@@ -170,12 +156,15 @@ server_thread.start()
 append_info_panel("Server started at port 9999")
 server_status.config(text="Server: Online")
 
-# GUI add send button
-send_button = Button(root, command=send_timeout, text="send timeout")
-send_button.pack()
+# GUI add send button Uncomment to have that functionality
+# send_button = Button(root, command=send_timeout, text="send timeout")
+# send_button.pack()
+active_connections_label = Label(root, text="No Active Connections!")
+active_connections_label.pack()
 quit_button = Button(root, command=quit, text="Quit")
 quit_button.pack()
 
+# send pause signals over a new thread
 pause_thread = threading.Thread(target=pause_random_every_10_seconds)
 pause_thread.daemon = True
 pause_thread.start()
